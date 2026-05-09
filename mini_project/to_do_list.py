@@ -237,29 +237,25 @@ def create_category_database(category):
         cursor.execute("INSERT INTO category_list (category) VALUES (?)", (category,))
         conn.commit()
         create_category_frame(category)
-        # category_list.append(category)
-
 
 def day_color_change(clicked_button):
-    # সব বাটনের রঙ রিসেট করা
+    # Reset every button color
     for button in day_buttons:
         button.configure(
             fg_color='transparent',
             hover_color=FG)
 
-    # ক্লিক করা বাটনের রঙ পরিবর্তন করা
+    # Changing button color which is clicked
     clicked_button.configure(fg_color=FG)
 
 
-# একটি ফাংশন যা বাটন ক্লিক হলে কাজ করবে
+# A function that works when the button click
 def color_change(clicked_button):
-    # সব বাটনের রঙ রিসেট করা
+    # Reset every button color
     for button in buttons:
         button.configure(
             fg_color='transparent',
             hover_color=FG)
-
-    # ক্লিক করা বাটনের রঙ পরিবর্তন করা
     clicked_button.configure(fg_color=FG)
 
 
@@ -366,12 +362,9 @@ def active_digital_watch():
 
 
 def show_calculator():
-    # calculator_frame = CTkFrame(project_frame, width=390, height=764, fg_color=BG)
-    # calculator_frame.pack()
     window = CTk()
-    # app = calculator.CalculatorApp(window)
     window.mainloop()
-    # app.pack()
+    pass
 
 
 def show_my_project():
@@ -435,7 +428,6 @@ def searching_task():
     global search_entry, app
     # Create the main application window
     app = CTkScrollableFrame(main_frame, width=390, height=800, fg_color=FG)
-    # back_btn = CTkButton(app,)
     app.place(x=0, y=50)
     # Create a search entry box
     underline_lbl = CTkLabel(main_frame, text="_________________________________________________",
@@ -526,8 +518,6 @@ def implement_task_from_db(category, button, t_count):
     for task_l in tasks_list:
         if task_l[1] == '':
             show_task_in_frame(task_l[0], task_l[1], task[2])
-    # for task in tasks :
-    #     show_task_in_frame(task[0], task[1])
     task_showing_frame.place(x=0, y=300)
 
     if task_showing_frame.winfo_children() == []:
