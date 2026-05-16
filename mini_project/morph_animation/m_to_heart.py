@@ -1,11 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Polygon, Circle
 
-# ----------------------------
+# =========================================================
 # Curve helpers
-# ----------------------------
-def catmull_rom_closed(points, samples_per_seg=80):
+# =========================================================
+def catmull_rom_closed(points, samples_per_seg=120):
     pts = np.asarray(points, dtype=float)
     n = len(pts)
     out = []
@@ -93,10 +94,6 @@ def signed_area(points):
 
 
 def rotate_start_near_bottom_center(points, bottom_fraction=0.30):
-    """
-    Contour seam bottom-center এর কাছাকাছি আনে
-    যাতে morph symmetric হয়।
-    """
     pts = np.asarray(points, dtype=float)
 
     y = pts[:, 1]
@@ -114,19 +111,13 @@ def rotate_start_near_bottom_center(points, bottom_fraction=0.30):
 
 
 def best_cyclic_alignment(ref, pts):
-    """
-    ref shape এর সাথে pts shape এর best cyclic alignment বের করে।
-    এতে left/right twisting কমে যায়।
-    """
     n = len(ref)
 
     best = pts
     best_err = np.inf
 
-    # normal + reversed দুইটাই test করি
     for candidate in (pts, pts[::-1]):
 
-        # সব possible cyclic shift
         for shift in range(n):
 
             rolled = np.roll(candidate, shift, axis=0)
@@ -140,49 +131,77 @@ def best_cyclic_alignment(ref, pts):
     return best
 
 
-def ease_in_out_sine(x):
-    return 0.5 - 0.5 * np.cos(np.pi * x)
+def ease_in_out_quint(x):
+    x = np.clip(x, 0.0, 1.0)
+
+    return (
+        16 * x**5
+        if x < 0.5
+        else 1 - (-2 * x + 2) ** 5 / 2
+    )
 
 
-# ----------------------------
-# M outline
-# ----------------------------
+def rotate_scale(points, angle_deg=0.0, scale=1.0):
+    pts = np.asarray(points, dtype=float)
+
+    theta = np.deg2rad(angle_deg)
+
+    c, s = np.cos(theta), np.sin(theta)
+
+    R = np.array([
+        [c, -s],
+        [s,  c]
+    ])
+
+    return (pts @ R.T) * scale
+
+
+# =========================================================
+# Animated neon gradient
+# =========================================================
+def gradient_color(t):
+
+    c1 = np.array([0.20, 0.95, 1.00])   # cyan
+    c2 = np.array([1.00, 0.35, 0.75])   # pink
+    c3 = np.array([0.72, 0.35, 1.00])   # violet
+
+    if t < 0.5:
+        u = t * 2
+        c = (1 - u) * c1 + u * c2
+    else:
+        u = (t - 0.5) * 2
+        c = (1 - u) * c2 + u * c3
+
+    return tuple(c)
+
+
+# =========================================================
+# M shape
+# =========================================================
 M_CTRL = np.array([
-
-    # LEFT OUTER SIDE
     [-1.12, -1.10],
-    [-1.22,  -.20],
+    [-1.22, -0.20],
     [-1.15,  0.75],
     [-0.92,  1.18],
-
-    # TOP CENTER VALLEY
     [ 0.00,  0.12],
-
-    # RIGHT OUTER SIDE
     [ 0.92,  1.18],
     [ 1.15,  0.75],
     [ 1.22, -0.20],
     [ 1.12, -1.10],
-
-    # RIGHT INNER STEM
     [ 0.72, -1.00],
     [ 0.68, -0.15],
     [ 0.48,  0.10],
-
-    # INNER CENTER VALLEY
     [ 0.00, -0.55],
-
-    # LEFT INNER STEM
     [-0.48,  0.10],
     [-0.68, -0.15],
     [-0.72, -1.00],
-])
+], dtype=np.float64)
 
 
-# ----------------------------
-# Perfect heart curve
-# ----------------------------
-def perfect_heart(num=4000):
+# =========================================================
+# Heart curve
+# =========================================================
+def perfect_heart(num=7000):
 
     t = np.linspace(0, 2 * np.pi, num, endpoint=False)
 
@@ -205,43 +224,48 @@ def perfect_heart(num=4000):
     return pts
 
 
-# ----------------------------
+# =========================================================
 # Prepare shapes
-# ----------------------------
-N = 1400
+# =========================================================
+N = 2400
 
-# M shape
-m_dense = catmull_rom_closed(M_CTRL, samples_per_seg=100)
+m_dense = catmull_rom_closed(M_CTRL, samples_per_seg=180)
 m_shape = resample_closed_curve(m_dense, N)
 m_shape = normalize_to_box(m_shape, target=1.35)
 
-# Heart shape
-h_dense = perfect_heart(5000)
+h_dense = perfect_heart(7000)
 h_shape = resample_closed_curve(h_dense, N)
 h_shape = normalize_to_box(h_shape, target=1.35)
 
-# Seam alignment
-m_shape = rotate_start_near_bottom_center(
-    m_shape,
-    bottom_fraction=0.30
-)
+m_shape = rotate_start_near_bottom_center(m_shape)
+h_shape = rotate_start_near_bottom_center(h_shape)
 
-h_shape = rotate_start_near_bottom_center(
-    h_shape,
-    bottom_fraction=0.30
-)
-
-# Orientation fix
 if np.sign(signed_area(m_shape)) != np.sign(signed_area(h_shape)):
     h_shape = h_shape[::-1]
 
-# Best cyclic alignment
 h_shape = best_cyclic_alignment(m_shape, h_shape)
 
+# =========================================================
+# Background particles
+# =========================================================
+rng = np.random.default_rng(7)
 
-# ----------------------------
-# Animation setup
-# ----------------------------
+particle_n = 90
+
+particle_angles = rng.uniform(0, 2 * np.pi, particle_n)
+particle_r = rng.uniform(1.4, 2.7, particle_n)
+
+particle_phase = rng.uniform(0, 2 * np.pi, particle_n)
+particle_speed = rng.uniform(0.35, 1.20, particle_n)
+
+particle_size = rng.uniform(12, 65, particle_n)
+
+px0 = particle_r * np.cos(particle_angles)
+py0 = particle_r * np.sin(particle_angles)
+
+# =========================================================
+# Figure setup
+# =========================================================
 fig, ax = plt.subplots(
     figsize=(8, 8),
     facecolor="black"
@@ -251,57 +275,171 @@ ax.set_facecolor("black")
 
 ax.set_aspect("equal")
 
-ax.set_xlim(-1.8, 1.8)
-ax.set_ylim(-1.7, 1.7)
+ax.set_xlim(-2.2, 2.2)
+ax.set_ylim(-2.2, 2.2)
 
 ax.axis("off")
 
-line_color = "#ff88cc"
+# =========================================================
+# Aurora cinematic background
+# =========================================================
+grid = 700
 
-# Glow layers
+xx = np.linspace(-2.4, 2.4, grid)
+yy = np.linspace(-2.4, 2.4, grid)
+
+X, Y = np.meshgrid(xx, yy)
+
+R = np.sqrt(X**2 + Y**2)
+
+bg1 = np.exp(-((X + 0.6)**2 + (Y - 0.4)**2) * 1.6)
+bg2 = np.exp(-((X - 0.7)**2 + (Y + 0.5)**2) * 1.2)
+bg3 = np.exp(-(R**2) * 0.9)
+
+aurora = np.zeros((grid, grid, 3))
+
+aurora[..., 0] = 0.95 * bg2 + 0.25 * bg3
+aurora[..., 1] = 0.70 * bg1 + 0.15 * bg2
+aurora[..., 2] = 1.00 * bg1 + 0.95 * bg3
+
+aurora = np.clip(aurora, 0, 1)
+
+ax.imshow(
+    aurora,
+    extent=[-2.4, 2.4, -2.4, 2.4],
+    origin="lower",
+    alpha=0.42,
+    zorder=0
+)
+
+# =========================================================
+# Halo ring
+# =========================================================
+halo = Circle(
+    (0, 0),
+    1.45,
+    fill=False,
+    lw=2.0,
+    alpha=0.10,
+)
+
+ax.add_patch(halo)
+
+# =========================================================
+# Fill glow
+# =========================================================
+fill_patch = Polygon(
+    m_shape,
+    closed=True,
+    facecolor=gradient_color(0.5),
+    edgecolor="none",
+    alpha=0.06,
+    zorder=2
+)
+
+ax.add_patch(fill_patch)
+
+# =========================================================
+# Neon glow layers
+# =========================================================
 glow1, = ax.plot(
-    [], [],
-    color=line_color,
-    lw=26,
-    alpha=0.03,
-    solid_capstyle="round"
+    [],
+    [],
+    lw=34,
+    alpha=0.025,
+    solid_capstyle="round",
+    zorder=3
 )
 
 glow2, = ax.plot(
-    [], [],
-    color=line_color,
-    lw=18,
-    alpha=0.06,
-    solid_capstyle="round"
+    [],
+    [],
+    lw=24,
+    alpha=0.05,
+    solid_capstyle="round",
+    zorder=4
 )
 
 glow3, = ax.plot(
-    [], [],
-    color=line_color,
-    lw=12,
-    alpha=0.10,
-    solid_capstyle="round"
+    [],
+    [],
+    lw=14,
+    alpha=0.12,
+    solid_capstyle="round",
+    zorder=5
 )
 
 glow4, = ax.plot(
-    [], [],
-    color=line_color,
-    lw=7,
-    alpha=0.18,
-    solid_capstyle="round"
+    [],
+    [],
+    lw=8,
+    alpha=0.22,
+    solid_capstyle="round",
+    zorder=6
 )
 
 line, = ax.plot(
-    [], [],
-    color=line_color,
+    [],
+    [],
     lw=3.2,
-    solid_capstyle="round"
+    solid_capstyle="round",
+    zorder=7
 )
 
-# Percentage text
+# =========================================================
+# Particles
+# =========================================================
+sc = ax.scatter(
+    px0,
+    py0,
+    s=particle_size,
+    c=np.ones((particle_n, 4)),
+    alpha=0.0,
+    zorder=1
+)
+
+# =========================================================
+# Pulse center
+# =========================================================
+pulse_dot = ax.scatter(
+    [0],
+    [0],
+    s=0,
+    c=[gradient_color(0.5)],
+    alpha=0.0,
+    zorder=8
+)
+
+# =========================================================
+# Text
+# =========================================================
+ax.text(
+    0.5,
+    1.18,
+    "M → Heart",
+    transform=ax.transAxes,
+    ha="center",
+    va="center",
+    color="white",
+    fontsize=26,
+    fontweight="bold"
+)
+
+ax.text(
+    0.5,
+    1.05,
+    "Cinematic Neon Morph",
+    transform=ax.transAxes,
+    ha="center",
+    va="center",
+    color="white",
+    fontsize=14,
+    alpha=0.85
+)
+
 pct_text = ax.text(
     0.5,
-    1.08,
+    1.085,
     "0%",
     transform=ax.transAxes,
     ha="center",
@@ -310,55 +448,70 @@ pct_text = ax.text(
     fontsize=18
 )
 
-# Title
-ax.text(
-    0.5,
-    1.18,
-    "M → Heart",
-    transform=ax.transAxes,
-    ha="center",
-    va="center",
-    color="#ff9fd8",
-    fontsize=24,
-    fontweight="bold"
-)
-
-# Subtitle
-ax.text(
-    0.5,
-    1.05,
-    "Smooth morph animation",
-    transform=ax.transAxes,
-    ha="center",
-    va="center",
-    color="white",
-    fontsize=14,
-    alpha=0.9
-)
-
-
-# ----------------------------
+# =========================================================
 # Animation update
-# ----------------------------
+# =========================================================
 def update(frame):
 
-    phase = (frame % 240) / 240.0
+    phase = (frame % 420) / 420.0
 
-    # forward + backward
+    # smooth morph
     t = phase if phase <= 0.5 else 1.0 - phase
-
     t *= 2.0
 
-    # easing
-    t = ease_in_out_sine(t)
+    t = ease_in_out_quint(t)
 
-    # morph
+    # breathing
+    breath = 1.0 + 0.025 * np.sin(
+        2 * np.pi * phase * 2.0
+    )
+
+    # tiny rotation drift
+    drift_angle = 2.2 * np.sin(
+        2 * np.pi * phase
+    )
+
+    wobble = 0.01 * np.sin(
+        2 * np.pi * phase * 3.0
+    )
+
+    # morph interpolation
     pts = (1 - t) * m_shape + t * h_shape
+
+    # transform
+    pts = rotate_scale(
+        pts,
+        angle_deg=drift_angle,
+        scale=breath
+    )
+
+    pts[:, 1] += wobble * (0.35 + 0.65 * t)
 
     x = pts[:, 0]
     y = pts[:, 1]
 
-    # update all glow layers
+    # =====================================================
+    # Animated neon gradient
+    # =====================================================
+    dynamic_color = gradient_color(
+        0.5 + 0.5 * np.sin(
+            2 * np.pi * phase
+        )
+    )
+
+    brightness = 0.75 + 0.35 * np.sin(np.pi * t)
+
+    dynamic_color = tuple(
+        np.clip(
+            np.array(dynamic_color) * brightness,
+            0,
+            1
+        )
+    )
+
+    # =====================================================
+    # Glow update
+    # =====================================================
     for artist in (
         glow1,
         glow2,
@@ -367,8 +520,127 @@ def update(frame):
         line
     ):
         artist.set_data(x, y)
+        artist.set_color(dynamic_color)
 
-    pct_text.set_text(f"{int(round(t * 100))}%")
+    # =====================================================
+    # Fill update
+    # =====================================================
+    fill_patch.set_xy(
+        np.column_stack([x, y])
+    )
+
+    fill_patch.set_facecolor(dynamic_color)
+
+    fill_patch.set_alpha(
+        0.045
+        + 0.065
+        * (0.5 + 0.5 * np.sin(np.pi * t))
+    )
+
+    # =====================================================
+    # Halo animation
+    # =====================================================
+    halo.set_edgecolor(dynamic_color)
+
+    halo.set_alpha(
+        0.06
+        + 0.07
+        * (np.sin(np.pi * t) ** 2)
+    )
+
+    halo.set_linewidth(
+        1.7
+        + 1.4
+        * (np.sin(np.pi * t) ** 2)
+    )
+
+    # =====================================================
+    # Pulse center
+    # =====================================================
+    pulse_size = (
+        30
+        + 260
+        * (np.sin(np.pi * t) ** 2)
+    )
+
+    pulse_alpha = (
+        0.08
+        + 0.16
+        * (np.sin(np.pi * t) ** 2)
+    )
+
+    pulse_dot.set_sizes([pulse_size])
+
+    pulse_dot.set_alpha(pulse_alpha)
+
+    pulse_dot.set_color([dynamic_color])
+
+    # =====================================================
+    # Particles
+    # =====================================================
+    pa = phase * 2 * np.pi
+
+    px = px0 + 0.03 * np.sin(
+        pa * particle_speed + particle_phase
+    )
+
+    py = py0 + 0.03 * np.cos(
+        pa * (particle_speed * 0.8)
+        + particle_phase * 1.3
+    )
+
+    offsets = np.column_stack([px, py])
+
+    sc.set_offsets(offsets)
+
+    alphas = (
+        0.15
+        + 0.55
+        * (
+            0.5
+            + 0.5
+            * np.sin(
+                pa * particle_speed
+                + particle_phase
+            )
+        )
+    )
+
+    sizes = particle_size * (
+        0.75
+        + 0.65
+        * (
+            0.5
+            + 0.5
+            * np.sin(
+                pa * particle_speed * 1.15
+                + particle_phase
+            )
+        )
+    )
+
+    colors = np.ones((particle_n, 4))
+
+    colors[:, 0] = dynamic_color[0]
+    colors[:, 1] = dynamic_color[1]
+    colors[:, 2] = dynamic_color[2]
+
+    colors[:, 3] = np.clip(
+        alphas * 0.35,
+        0,
+        0.35
+    )
+
+    sc.set_facecolors(colors)
+
+    sc.set_sizes(sizes)
+
+    # =====================================================
+    # Percentage
+    # =====================================================
+    pct_text.set_text(
+        f"{int(round(t * 100))}%"
+    )
 
     return (
         glow1,
@@ -376,18 +648,22 @@ def update(frame):
         glow3,
         glow4,
         line,
+        fill_patch,
+        sc,
+        pulse_dot,
+        halo,
         pct_text
     )
 
 
-# ----------------------------
+# =========================================================
 # Run animation
-# ----------------------------
+# =========================================================
 anim = FuncAnimation(
     fig,
     update,
-    frames=240,
-    interval=25,
+    frames=420,
+    interval=18,
     blit=True
 )
 
